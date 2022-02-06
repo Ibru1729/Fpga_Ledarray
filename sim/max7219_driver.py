@@ -1,6 +1,55 @@
 import numpy as np
-import matplotlib.pyplot as plt
+import cocotb
+import pyglet
+from pyglet import shapes
+from pyglet.event import EventDispatcher
 
+class LEDEvent(EventDispatcher):
+    def update_state(self,state):
+        self.dispatch_event('state_update',state)
+
+LEDEvent.register_event_type('state_update')
+
+sizex = 900
+sizey = 900
+window = pyglet.window.Window(sizex,sizey)
+
+def transform_axes(x,y):
+    return x,sizey-y
+
+batch = pyglet.graphics.Batch()
+circles = []
+radius = 10.0
+columns = 8
+rows = 8
+color = (255,255,255)
+for i in range(rows):
+    circle_row = []
+    y = (2*i+1)*radius
+    for j in range(columns):
+        x = (2*j+1)* radius
+        pyglet_x,pyglet_y = transform_axes(x,y)
+        circle_row.append(shapes.Circle(pyglet_x,pyglet_y,radius,color=color,batch=batch))
+
+    circles.append(circle_row)
+
+@window.event
+def on_draw():
+    window.clear()
+    batch.draw()
+
+led_event_inst = LEDEvent()
+@led_event_inst.event('state_update')
+def update_led(state):
+    for i in range(rows):
+        for j in range(columns):
+            if state[i][j] == True:
+                circles[i][j].color = (0,255,0)
+            else:
+                circles[i][j].color = (255,255,255)
+
+
+#####################################################################
 class max7219_state:
     shift_reg = np.full(16, False);
     addr_reg = np.full(4, False);
@@ -13,7 +62,15 @@ class max7219_state:
     def __init__(self):
         self.data_ram.fill(False)
         return
+    def update_led_display(self):
+        pyglet.clock.tick()
 
+        for window in pyglet.app.windows:
+            window.switch_to()
+            window.dispatch_events()
+            window.dispatch_event('on_draw')
+            window.flip()
+    
     def process(self, load, clk, din):
         clk_posedge = (not self.clk) and clk
         load_posedge = (not self.load) and load
@@ -28,6 +85,11 @@ class max7219_state:
             if ((addr < 9) and (addr > 0)):
                 print ("SPI -- Digit :", addr, " :-  Data: ", self.data_reg[::-1]*1);
                 self.data_ram[addr - 1] = self.data_reg
+                led_event_inst.update_state(self.data_ram)
+                print("LED display function about to be called")
+                self.update_led_display()
+                print("LED display function called")
+
             elif (addr == 9):
                 print ("SPI -- Decode mode :-", "Data: ", self.data_reg[::-1]*1)
             elif (addr == 10):
@@ -98,7 +160,7 @@ class max7219_timing:
                 self.load_last_posedge = 0
 
 
-    def check_timing(self, max_state, load, clk, din):
+    async def check_timing(self, max_state, load, clk, din):
         self.time_increment()
         if (clk and (not max_state.clk)):
             assert (self.clk_last_posedge >= self.T_CP), "Error: SPI CLK TIME PERIOD is less than 100 ns"
@@ -121,7 +183,7 @@ class max7219_driver:
         self.max_state = max7219_state();
 
     def rx (self, load, clk, din):
-        self.max_timer.check_timing(self.max_state, load, clk, din)
+        cocotb.start_soon(self.max_timer.check_timing(self.max_state, load, clk, din))
         self.max_state.process(load, clk, din);
 
     def status (self):

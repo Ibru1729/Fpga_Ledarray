@@ -1,0 +1,7 @@
+__pycache__/
+*.vcd
+sim/results.xml
+*~
+*.swp
+*.swo
+sim/sim_build/
