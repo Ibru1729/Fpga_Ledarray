@@ -5,8 +5,9 @@ import uart_driver as uart
 # necessary for cocotb routine
 import cocotb
 import random
-from cocotb.triggers import Timer, FallingEdge
+from cocotb.triggers import Timer, Edge, FallingEdge, RisingEdge, First
 from cocotb.clock import Clock
+import cocotb.utils
 
 # clock period
 clock_period = 10
@@ -25,15 +26,15 @@ hw_debug_output = []
 
 async def update_maxdriver_input(dut, SimEvent_End):
     while (not SimEvent_End.is_set()):
-        await FallingEdge(dut.i_clk)
-        max_driver.rx(bool(dut.o_spi_load.value), bool(dut.o_spi_clk.value), bool(dut.o_spi_data.value))
+        await Edge(dut.jd);
+        current_time = cocotb.utils.get_sim_time("ns")
+        # max_driver.rx(bool(dut.o_spi_load.value), bool(dut.o_spi_clk.value), bool(dut.o_spi_data.value), current_time)
+        max_driver.rx(bool(dut.jd[2].value), bool(dut.jd[1].value), bool(dut.jd[3].value), current_time)
 
-async def update_uartdriver_input(dut, SimEvent_Data, SimEvent_End):
+async def update_uartdriver_input(dut, SimEvent_End):
     while (not SimEvent_End.is_set()):
-        await FallingEdge(dut.i_clk)
-        dut.i_uart_rx.value = int(uart_driver1.rx_tx(bool(dut.o_uart_tx.value), SimEvent_Data.is_set(), SimEvent_Data.data));
-        if (SimEvent_Data.is_set()):
-            SimEvent_Data.clear()
+        await RisingEdge(dut.rx_stb)
+        print ("UART Recieved : ", dut.rx_data.value.binstr);
 
 async def reset_dut(dut):
     await FallingEdge(dut.i_clk)
@@ -43,9 +44,13 @@ async def reset_dut(dut):
     await Timer(1000 * clock_period, units="ns")
     dut.i_btn.value = 0;
     
-async def send_test_data(dut, SimEvent_Data, SimEvent_End):
+async def send_test_data(dut, SimEvent_End):
     for i in range(len(uart_tx_data_array)):
-        SimEvent_Data.set(data = uart_tx_data_array[i]);
+        dut.uart_i_wr.value = 1;
+        dut.uart_tx_data.value = uart_tx_data_array[i];
+        await Timer(clock_period, 'ns');
+        dut.uart_i_wr.value = 0;
+        print ("Uart Send : ", "{:08b}".format(uart_tx_data_array[i]));
         await Timer(random.randint(9000 * clock_period, 9500 * clock_period), 'ns');
     SimEvent_End.set();
 
@@ -53,11 +58,8 @@ async def send_test_data(dut, SimEvent_Data, SimEvent_End):
 @cocotb.test()
 async def spi_test_batman(dut):
     SimEvent_End = cocotb.triggers.Event()
-    SimEvent_Data = cocotb.triggers.Event()
-    #start clock generator for infinite cycles
-    await cocotb.start(Clock(dut.i_clk,period=clock_period,units='ns').start(start_high=False))
     #asynchronously start input data feeding function
     cocotb.start_soon(update_maxdriver_input(dut ,SimEvent_End))
-    cocotb.start_soon(update_uartdriver_input(dut,SimEvent_Data, SimEvent_End))
+    cocotb.start_soon(update_uartdriver_input(dut, SimEvent_End))
     await reset_dut(dut)
-    await send_test_data(dut,SimEvent_Data, SimEvent_End) 
+    await send_test_data(dut, SimEvent_End) 

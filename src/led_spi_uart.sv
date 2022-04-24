@@ -71,7 +71,7 @@ module led_spi_uart (
 	wire o_spi_data;
 	assign jd = {o_spi_data, o_spi_load, o_spi_clk};
 	always @(*) begin
-		spi_i_data = {uart_rx_data[1], uart_rx_data[0]};
+		spi_i_data = i_event ? {8'h0c, 8'h00} : {uart_rx_data[1], uart_rx_data[0]};
 		spi_i_wr = (rx_stb && (rx_data == ">")) || i_event;
 	end
 	spi #(.DATA_WIDTH(16), .CLK_DIV(CLK_FREQ / SPI_CLK_FREQ)) max_spi (

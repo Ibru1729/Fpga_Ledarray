@@ -136,14 +136,16 @@ class max7219_timing:
     din_last_change = 0;
     clk = False
     load = True
+    time = 0;
     def __init__(self, time_per_call):
         self.time_per_call = time_per_call;
-    def time_increment(self):
-        self.clk_last_posedge += self.time_per_call;
-        self.clk_last_negedge += self.time_per_call;
-        self.load_last_posedge += self.time_per_call;
-        self.load_last_negedge += self.time_per_call;
-        self.din_last_change += self.time_per_call;
+        self.time = 0;
+    def time_increment(self, time_change):
+        self.clk_last_posedge += time_change;
+        self.clk_last_negedge += time_change;
+        self.load_last_posedge += time_change;
+        self.load_last_negedge += time_change;
+        self.din_last_change += time_change;
 
     def time_update(self, max_state, load, clk, din):
         if (din != max_state.din):
@@ -160,8 +162,10 @@ class max7219_timing:
                 self.load_last_posedge = 0
 
 
-    async def check_timing(self, max_state, load, clk, din):
-        self.time_increment()
+    def check_timing(self, max_state, load, clk, din, current_time):
+        time_change = current_time - self.time
+        self.time_increment(time_change)
+        self.time = current_time
         if (clk and (not max_state.clk)):
             assert (self.clk_last_posedge >= self.T_CP), "Error: SPI CLK TIME PERIOD is less than 100 ns"
             assert (self.clk_last_negedge >= self.T_CL), "Error: SPI T_CL violation"
@@ -182,8 +186,8 @@ class max7219_driver:
         self.max_timer = max7219_timing(time);
         self.max_state = max7219_state();
 
-    def rx (self, load, clk, din):
-        cocotb.start_soon(self.max_timer.check_timing(self.max_state, load, clk, din))
+    def rx (self, load, clk, din, current_time):
+        self.max_timer.check_timing(self.max_state, load, clk, din, current_time)
         self.max_state.process(load, clk, din);
 
     def status (self):
